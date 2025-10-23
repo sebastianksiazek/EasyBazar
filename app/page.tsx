@@ -7,7 +7,7 @@ export default function Home() {
     <main className="flex min-h-screen items-center justify-center p-6">
       <Card className="max-w-md w-full">
         <CardContent className="p-6 flex flex-col gap-4 items-center">
-          <h1 className="text-3xl font-semibold">EasyBazar działa. Jej 🎉</h1>
+          <h1 className="text-3xl font-semibold">EasyBazar działa12121212121 Jej 🎉</h1>
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             Przycisk testowy
