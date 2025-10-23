@@ -1,15 +1,17 @@
 import "./globals.css";
-import type { ReactNode } from "react";
+import Providers from "./providers";
 
 export const metadata = {
   title: "EasyBazar",
   description: "Portal ogłoszeniowy studentów",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pl">
-      <body className="min-h-screen bg-gray-50 text-gray-900">{children}</body>
+      <body className="min-h-screen">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
