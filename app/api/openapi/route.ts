@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
-// Dokumentacja OpenAPI 3.0 dla EasyBazar Auth API
+// OpenAPI 3.0.3 – Auth + Health z rozszerzonymi błędami dla sign-up
 const openapi = {
   openapi: "3.0.3",
   info: {
     title: "EasyBazar API",
-    version: "1.0.0",
+    version: "1.0.1",
     description: "Dokumentacja API dla endpointów w /app/api/* (moduł Auth + Health check)",
   },
   servers: [{ url: "http://localhost:3000", description: "Dev" }],
@@ -23,9 +23,7 @@ const openapi = {
                   type: "object",
                   properties: { ok: { type: "boolean" } },
                 },
-                examples: {
-                  ok: { value: { ok: true } },
-                },
+                examples: { ok: { value: { ok: true } } },
               },
             },
           },
@@ -36,7 +34,8 @@ const openapi = {
     // ---------- AUTH ----------
     "/api/auth/sign-up": {
       post: {
-        summary: "Rejestracja (email + hasło) i wysyłka kodu weryfikacyjnego",
+        summary:
+          "Rejestracja (email + hasło) i wysyłka kodu weryfikacyjnego; walidacja kolizji email/username",
         tags: ["Auth"],
         requestBody: {
           required: true,
@@ -55,32 +54,8 @@ const openapi = {
               },
             },
           },
-          "400": { $ref: "#/components/responses/Error400" },
-        },
-      },
-    },
-
-    "/api/auth/verify-email": {
-      post: {
-        summary: "Weryfikacja konta kodem z e-maila",
-        tags: ["Auth"],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/VerifyEmailRequest" },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Zweryfikowano e-mail",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/AuthOkResponse" },
-              },
-            },
-          },
+          "409": { $ref: "#/components/responses/Error409Conflict" }, // NEW
+          "429": { $ref: "#/components/responses/Error429RateLimit" }, // NEW
           "400": { $ref: "#/components/responses/Error400" },
         },
       },
@@ -180,6 +155,11 @@ const openapi = {
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
+                examples: {
+                  unauthorized: {
+                    value: { error: "Unauthorized" },
+                  },
+                },
               },
             },
           },
@@ -260,15 +240,41 @@ const openapi = {
       },
       ErrorResponse: {
         type: "object",
-        properties: { error: { type: "string" } },
+        properties: { error: { type: "string", example: "Error message" } },
       },
     },
     responses: {
       Error400: {
-        description: "Błędne dane wejściowe lub błąd serwera",
+        description: "Błędne dane wejściowe lub inny błąd żądania",
         content: {
           "application/json": {
             schema: { $ref: "#/components/schemas/ErrorResponse" },
+            examples: {
+              badRequest: { value: { error: "Invalid request" } },
+            },
+          },
+        },
+      },
+      Error409Conflict: {
+        description: "Kolizja danych (email lub username już istnieje)",
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ErrorResponse" },
+            examples: {
+              emailTaken: { value: { error: "Email already registered" } },
+              usernameTaken: { value: { error: "Username already taken" } },
+            },
+          },
+        },
+      },
+      Error429RateLimit: {
+        description: "Przekroczony limit wysyłek (rate limit)",
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ErrorResponse" },
+            examples: {
+              tooMany: { value: { error: "Email rate limit exceeded" } },
+            },
           },
         },
       },
