@@ -1,0 +1,61 @@
+name: PR → Discord
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Discord embed
+        id: msg
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          ACTION="${{ github.event.action }}"
+          DRAFT="${{ github.event.pull_request.draft }}"
+          USER="${{ github.event.pull_request.user.login }}"
+          BASE="${{ github.event.pull_request.base.ref }}"
+          HEAD="${{ github.event.pull_request.head.ref }}"
+          MERGED="${{ github.event.pull_request.merged }}"
+
+          if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+            STATUS="✅ **Merged** do \`${BASE}\`"
+            COLOR=3066993
+          elif [ "$ACTION" = "closed" ]; then
+            STATUS="🛑 **Closed** (niezmergowany)"
+            COLOR=15158332
+          elif [ "$ACTION" = "synchronize" ]; then
+            STATUS="🔄 **Updated** (push na gałąź)"
+            COLOR=3447003
+          else
+            if [ "$DRAFT" = "true" ]; then STATUS="📝 **Draft opened**"; else STATUS="✨ **Opened**"; fi
+            COLOR=10181046
+          fi
+
+          cat > payload.json <<EOF
+          {
+            "allowed_mentions": { "parse": [] },
+            "embeds": [
+              {
+                "title": "#${PR_NUMBER} ${PR_TITLE}",
+                "url": "${PR_URL}",
+                "description": "${STATUS}\n**Autor:** ${USER}\n**Base:** \`${BASE}\`  →  **Head:** \`${HEAD}\`",
+                "color": ${COLOR},
+                "footer": { "text": "${{ github.repository }} • PR" },
+                "timestamp": "${{ github.event.pull_request.updated_at }}"
+              }
+            ]
+          }
+          EOF
+
+      - name: Send to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_PR_WEBHOOK_URL }}
+        run: |
+          curl -sS -H "Content-Type: application/json" \
+               -X POST \
+               -d @payload.json \
+               "$WEBHOOK"

@@ -1,0 +1,42 @@
+name: Vercel deploy → Discord
+
+on:
+  deployment_status:
+
+jobs:
+  notify:
+    # tylko sukcesy
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build payload
+        run: |
+          URL="${{ github.event.deployment_status.target_url }}"
+          ENV="${{ github.event.deployment_status.environment }}"
+          REPO="${{ github.repository }}"
+          REF="${{ github.event.deployment.ref }}"
+          SHA="${{ github.event.deployment.sha }}"
+          SHORT_SHA=$(echo "$SHA" | cut -c1-7)
+
+          cat > payload.json <<EOF
+          {
+            "allowed_mentions": { "parse": [] },
+            "embeds": [
+              {
+                "title": "✅ Deployment succeeded",
+                "url": "${URL}",
+                "description": "**Env:** \`${ENV}\`\n**Branch:** \`${REF}\`\n**Commit:** \`${SHORT_SHA}\`\n**URL:** ${URL}",
+                "color": 3066993,
+                "footer": { "text": "${REPO} • deploy" },
+                "timestamp": "${{ github.event.deployment_status.updated_at }}"
+              }
+            ]
+          }
+          EOF
+
+      - name: Send to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+        run: |
+          curl -sS -H "Content-Type: application/json" \
+               -X POST -d @payload.json "$WEBHOOK"

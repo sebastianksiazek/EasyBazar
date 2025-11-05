@@ -1,0 +1,13 @@
+name: Manual → Discord test
+on: { workflow_dispatch: {} }
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send ping
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_PR_WEBHOOK_URL }}
+        run: |
+          echo '{"content":"✅ Test z GitHub Actions działa 👋","allowed_mentions":{"parse":[]}}' > payload.json
+          curl -sS -H "Content-Type: application/json" -d @payload.json "$WEBHOOK"
