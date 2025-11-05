@@ -1,0 +1,71 @@
+name: Deploy (Vercel CLI) → Discord
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # jeśli budujesz Next.js w CI:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Install deps
+        run: |
+          corepack enable
+          pnpm i --frozen-lockfile
+      - name: Build
+        run: pnpm build
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Deploy to Vercel (preview for PR, prod for main)
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            URL=$(vercel deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")
+            ENV="production"
+          else
+            URL=$(vercel deploy --prebuilt --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID")
+            ENV="preview"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+        run: |
+          URL="${{ steps.vercel.outputs.url }}"
+          ENV="${{ steps.vercel.outputs.env }}"
+          REF="${{ github.ref_name }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA=$(echo "$SHA" | cut -c1-7)
+          cat > payload.json <<EOF
+          {
+            "allowed_mentions": { "parse": [] },
+            "embeds": [{
+              "title": "✅ Deployment (${ENV})",
+              "url": "${URL}",
+              "description": "**Branch:** \`${REF}\`\n**Commit:** \`${SHORT_SHA}\`\n**URL:** ${URL}",
+              "color": 3066993,
+              "footer": { "text": "${{ github.repository }} • Vercel CLI" },
+              "timestamp": "${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}"
+            }]
+          }
+          EOF
+          curl -sS -H "Content-Type: application/json" -d @payload.json "$WEBHOOK"
