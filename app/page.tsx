@@ -1,7 +1,27 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { ListingCard } from "@/components/ListingCard";
+import { createClient } from "@/lib/supabase-server";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const supabase = await createClient();
+
+  // Pobieramy ogłoszenia wraz z pierwszym zdjęciem i kategorią
+  const { data: listings } = await supabase
+    .from("listings")
+    .select(
+      `
+      *,
+      listing_images (path),
+      categories (name)
+    `
+    )
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
       {/* Hero Section */}
@@ -24,20 +44,44 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Sekcja z ogłoszeniami (Placeholder) */}
+      {/* Sekcja z ogłoszeniami */}
       <section className="container px-4 py-12 mx-auto">
-        <h2 className="text-2xl font-bold mb-6">Najnowsze ogłoszenia</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {/* Tutaj w przyszłości zmapujesz listę ogłoszeń */}
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="border rounded-lg p-4 h-64 flex items-center justify-center bg-card text-card-foreground shadow-sm"
-            >
-              Ogłoszenie {i}
-            </div>
-          ))}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold">Najnowsze ogłoszenia</h2>
+          <Link href="/listings" className="text-primary hover:underline">
+            Zobacz wszystkie
+          </Link>
         </div>
+
+        {listings && listings.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {listings.map((listing) => {
+              // Pobieramy pierwsze zdjęcie lub null
+              const firstImage = listing.listing_images?.[0]?.path || null;
+              const categoryName = listing.categories?.name || "Inne";
+
+              return (
+                <ListingCard
+                  key={listing.id}
+                  id={listing.id}
+                  title={listing.title}
+                  price={listing.price_cents / 100}
+                  imageSrc={firstImage}
+                  location={listing.city || "Polska"}
+                  category={categoryName}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-12 border rounded-lg bg-muted/10">
+            <h3 className="text-xl font-semibold mb-2">Brak ogłoszeń</h3>
+            <p className="text-muted-foreground mb-4">Bądź pierwszy i wystaw coś na sprzedaż!</p>
+            <Button asChild>
+              <Link href="/listings/new">Dodaj ogłoszenie</Link>
+            </Button>
+          </div>
+        )}
       </section>
     </div>
   );
