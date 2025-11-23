@@ -14,10 +14,22 @@ export async function createClient() {
           return store.get(name)?.value;
         },
         set(name: string, value: string, options: CookieOptions) {
-          store.set({ name, value, ...options });
+          try {
+            store.set({ name, value, ...options });
+          } catch (error) {
+            // The `set` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
         },
         remove(name: string, options: CookieOptions) {
-          store.set({ name, value: "", ...options });
+          try {
+            store.set({ name, value: "", ...options });
+          } catch (error) {
+            // The `delete` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
         },
       },
     }
