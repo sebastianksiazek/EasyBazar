@@ -13,6 +13,8 @@ interface ListingsPageProps {
     category?: string;
     minPrice?: string;
     maxPrice?: string;
+    city?: string;
+    voivodeship?: string;
   }>;
 }
 
@@ -20,6 +22,8 @@ export default async function ListingsPage({ searchParams }: ListingsPageProps) 
   const supabase = await createClient();
   const params = await searchParams;
   const query = params.q || "";
+  const city = params.city || "";
+  const voivodeship = params.voivodeship || "";
 
   let dbQuery = supabase
     .from("listings")
@@ -35,6 +39,14 @@ export default async function ListingsPage({ searchParams }: ListingsPageProps) 
 
   if (query) {
     dbQuery = dbQuery.ilike("title", `%${query}%`);
+  }
+
+  if (city) {
+    dbQuery = dbQuery.ilike("city", `%${city}%`);
+  }
+
+  if (voivodeship) {
+    dbQuery = dbQuery.ilike("region", `%${voivodeship}%`);
   }
 
   const { data: listings } = await dbQuery;
