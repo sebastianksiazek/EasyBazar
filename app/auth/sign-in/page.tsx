@@ -85,7 +85,7 @@ export default function SignInPage() {
               <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                 Email
               </label>
-              <Input type="email" placeholder="m@example.com" {...register("email")} />
+              <Input type="email" placeholder="nazwa@poczta.pl" {...register("email")} />
               {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
             </div>
             <div className="space-y-2">
