@@ -4,9 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,34 +19,37 @@ import { Loader2 } from "lucide-react";
 
 const signInSchema = z.object({
   email: z.string().email("Nieprawidłowy adres email"),
-  password: z.string().min(6, "Hasło musi mieć co najmniej 6 znaków"),
+  password: z.string().min(8, "Hasło musi mieć co najmniej 8 znaków"),
 });
 
 type SignInFormData = z.infer<typeof signInSchema>;
 
 export default function SignInPage() {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supabase = createBrowserSupabaseClient();
 
   const onSubmit = async (data: SignInFormData) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+      const res = await fetch("/api/auth/sign-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+        }),
       });
 
-      if (error) {
-        setError(error.message);
+      const json = await res.json();
+
+      if (!res.ok) {
+        setError(json.error || "Błąd logowania");
         return;
       }
 
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     } catch (err) {
       setError("Wystąpił nieoczekiwany błąd");
       console.error(err);

@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,8 +21,9 @@ import { Loader2 } from "lucide-react";
 const signUpSchema = z
   .object({
     username: z.string().min(3, "Nazwa użytkownika musi mieć co najmniej 3 znaki"),
+    fullName: z.string().min(1, "Imię i nazwisko jest wymagane"),
     email: z.string().email("Nieprawidłowy adres email"),
-    password: z.string().min(6, "Hasło musi mieć co najmniej 6 znaków"),
+    password: z.string().min(8, "Hasło musi mieć co najmniej 8 znaków"),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -37,7 +37,6 @@ export default function SignUpPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supabase = createBrowserSupabaseClient();
 
   const {
     register,
@@ -52,18 +51,24 @@ export default function SignUpPage() {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
+      const res = await fetch("/api/auth/sign-up", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          profile: {
             username: data.username,
+            fullName: data.fullName,
           },
-        },
+          redirectTo: `${window.location.origin}/auth/callback`,
+        }),
       });
 
-      if (error) {
-        setError(error.message);
+      const json = await res.json();
+
+      if (!res.ok) {
+        setError(json.error || "Błąd rejestracji");
         return;
       }
 
@@ -99,6 +104,15 @@ export default function SignUpPage() {
               <Input placeholder="jankowalski" {...register("username")} />
               {errors.username && (
                 <p className="text-sm text-destructive">{errors.username.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                Imię i nazwisko
+              </label>
+              <Input placeholder="Jan Kowalski" {...register("fullName")} />
+              {errors.fullName && (
+                <p className="text-sm text-destructive">{errors.fullName.message}</p>
               )}
             </div>
             <div className="space-y-2">
