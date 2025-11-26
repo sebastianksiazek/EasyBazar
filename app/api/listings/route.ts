@@ -7,22 +7,30 @@ import { createClient } from "@/lib/supabase-server";
 type ListingStatus = "active" | "sold" | "hidden";
 
 type ListingRow = {
-  id: number; // int8
-  owner: string; // uuid
-  title: string; // text
-  description: string; // text
-  price_cents: number; // int4
-  category_id: number | null; // int8
-  status: ListingStatus | null; // text
-  created_at: string; // timestamptz
+  id: number;
+  owner: string;
+  title: string;
+  description: string;
+  price_cents: number;
+  category_id: number | null;
+  status: ListingStatus | null;
+  created_at: string;
   city: string | null;
   region: string | null;
   country: string | null;
-  latitude: number | null; // float8
-  longitude: number | null; // float8
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type ListingInsertDb = Omit<ListingRow, "id" | "created_at">;
+
+type ListingImageRow = {
+  path: string;
+};
+
+type ListingWithImages = ListingRow & {
+  listing_images?: ListingImageRow[] | null;
+};
 
 type BaseLoc = {
   country: string | null;
@@ -35,8 +43,6 @@ type BaseLoc = {
 /* ========== Helpery ========== */
 const toCents = (pln: number) => Math.round(pln * 100);
 
-// Domyślny generyk = payload INSERT bez 'owner'.
-// Dzięki temu wywołanie nie wymaga <...>.
 async function geocodeIfNeeded<T extends BaseLoc>(
   payload: T
 ): Promise<Omit<T, "latitude" | "longitude"> & { latitude: number; longitude: number }> {
@@ -44,7 +50,6 @@ async function geocodeIfNeeded<T extends BaseLoc>(
   const hasLon = payload.longitude !== undefined && payload.longitude !== null;
 
   if (hasLat && hasLon) {
-    // już mamy koordy – upewniamy się, że są typu number
     return {
       ...(payload as Omit<T, "latitude" | "longitude">),
       latitude: Number(payload.latitude),
@@ -77,11 +82,11 @@ function errorMessage(e: unknown) {
   return "Invalid request";
 }
 
-/* ========== Zod w pliku ========== */
+/* ========== Zod schemat ========== */
 const ListingCreateSchema = z.object({
   title: z.string().min(3).max(120),
   description: z.string().min(10).max(5000),
-  price: z.number().positive(), // w zł — backend zamienia na grosze
+  price: z.number().positive(),
   category_id: z.coerce.number().int().optional(),
   status: z.enum(["active", "sold", "hidden"]).optional(),
   country: z.string().min(2),
@@ -89,6 +94,7 @@ const ListingCreateSchema = z.object({
   city: z.string().min(1),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  images: z.array(z.string().min(1)).max(10).optional(),
 });
 
 const ListQuerySchema = z.object({
@@ -98,10 +104,10 @@ const ListQuerySchema = z.object({
   country: z.string().optional(),
   region: z.string().optional(),
   city: z.string().optional(),
-  owner: z.enum(["me"]).optional(), // ?owner=me
+  owner: z.enum(["me"]).optional(),
 });
 
-/* ========== GET /api/listings (lista) ========== */
+/* ========== GET /api/listings ========== */
 export async function GET(req: Request) {
   try {
     const supabase = await createClient();
@@ -114,7 +120,7 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from("listings")
-      .select("*", { count: "exact" })
+      .select("*, listing_images(path)", { count: "exact" })
       .order("created_at", { ascending: false })
       .range((qp.page - 1) * qp.limit, qp.page * qp.limit - 1);
 
@@ -127,18 +133,26 @@ export async function GET(req: Request) {
     const { data, error, count } = await query;
     if (error) throw error;
 
+    const rows = (data as ListingWithImages[]) ?? [];
+
+    const items = rows.map((row) => {
+      const images = row.listing_images?.map((img: ListingImageRow) => img.path) ?? [];
+      const { listing_images: _ignored, ...rest } = row;
+      return { ...rest, images };
+    });
+
     return NextResponse.json({
       page: qp.page,
       limit: qp.limit,
       total: count ?? 0,
-      items: data ?? [],
+      items,
     });
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 400 });
   }
 }
 
-/* ========== POST /api/listings (tworzenie) ========== */
+/* ========== POST /api/listings ========== */
 export async function POST(req: Request) {
   try {
     const supabase = await createClient();
@@ -146,6 +160,7 @@ export async function POST(req: Request) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const parsed = ListingCreateSchema.strict().parse(await req.json());
@@ -159,16 +174,15 @@ export async function POST(req: Request) {
       country: parsed.country,
       region: parsed.region,
       city: parsed.city,
-      latitude: parsed.latitude ?? null, // null (nie NaN)
-      longitude: parsed.longitude ?? null, // null (nie NaN)
+      latitude: parsed.latitude ?? null,
+      longitude: parsed.longitude ?? null,
     };
 
-    // Uzupełnij współrzędne (typowo poprawnie dzięki domyślnemu generykowi)
     listingForDb = await geocodeIfNeeded<Omit<ListingInsertDb, "owner">>(listingForDb);
 
     const insertPayload: ListingInsertDb = {
       ...listingForDb,
-      owner: user.id, // nigdy z body
+      owner: user.id,
     };
 
     const { data, error } = await supabase
@@ -178,7 +192,26 @@ export async function POST(req: Request) {
       .single();
 
     if (error) throw error;
-    return NextResponse.json(data, { status: 201 });
+
+    // Insert images if provided
+    if (parsed.images && parsed.images.length > 0) {
+      const rows = parsed.images.map((path) => ({
+        listing_id: data.id,
+        path,
+      }));
+
+      const { error: imgError } = await supabase.from("listing_images").insert(rows);
+
+      if (imgError) throw imgError;
+    }
+
+    return NextResponse.json(
+      {
+        ...data,
+        images: parsed.images ?? [],
+      },
+      { status: 201 }
+    );
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 400 });
   }

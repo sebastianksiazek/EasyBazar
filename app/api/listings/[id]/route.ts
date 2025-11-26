@@ -23,6 +23,14 @@ type ListingRow = {
   longitude: number | null; // float8
 };
 
+type ListingImageRow = {
+  path: string;
+};
+
+type ListingWithImages = ListingRow & {
+  listing_images?: ListingImageRow[] | null;
+};
+
 type ListingUpdateDb = Partial<Omit<ListingRow, "id" | "owner" | "created_at">>;
 
 type BaseLoc = {
@@ -93,6 +101,9 @@ const ListingUpdateSchema = z
     city: z.string().min(1).optional(),
     latitude: z.number().min(-90).max(90).optional(),
     longitude: z.number().min(-180).max(180).optional(),
+
+    // ścieżki zdjęć z Supabase Storage
+    images: z.array(z.string().min(1)).max(10).optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, { message: "No fields to update" });
@@ -106,17 +117,24 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const supabase = await createClient();
 
-    const { id } = await ctx.params; // 👈 params to Promise
+    const { id } = await ctx.params;
     const numericId = Number(id);
 
     const { data, error } = await supabase
       .from("listings")
-      .select("*")
+      .select("*, listing_images(path)")
       .eq("id", numericId)
       .single();
 
     if (error) throw error;
-    return NextResponse.json(data);
+
+    const listing = data as ListingWithImages;
+
+    const images = listing.listing_images?.map((img: ListingImageRow) => img.path) ?? [];
+
+    const { listing_images: _ignored, ...rest } = listing;
+
+    return NextResponse.json({ ...rest, images });
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 404 });
   }
@@ -133,56 +151,103 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id } = await ctx.params; // 👈 await
+    const { id } = await ctx.params;
     const numericId = Number(id);
 
     const patch: ListingUpdate = ListingUpdateSchema.parse(await req.json());
 
+    // wydzielamy images, reszta idzie do patchDb
+    const { images, ...rest } = patch;
+
     const patchDb: ListingUpdateDb = {};
-    if (patch.title !== undefined) patchDb.title = patch.title;
-    if (patch.description !== undefined) patchDb.description = patch.description;
-    if (patch.price !== undefined) patchDb.price_cents = toCents(patch.price);
-    if (patch.category_id !== undefined) patchDb.category_id = patch.category_id;
-    if (patch.status !== undefined) patchDb.status = patch.status;
-    if (patch.country !== undefined) patchDb.country = patch.country;
-    if (patch.region !== undefined) patchDb.region = patch.region;
-    if (patch.city !== undefined) patchDb.city = patch.city;
-    if (patch.latitude !== undefined) patchDb.latitude = patch.latitude;
-    if (patch.longitude !== undefined) patchDb.longitude = patch.longitude;
+    if (rest.title !== undefined) patchDb.title = rest.title;
+    if (rest.description !== undefined) patchDb.description = rest.description;
+    if (rest.price !== undefined) patchDb.price_cents = toCents(rest.price);
+    if (rest.category_id !== undefined) patchDb.category_id = rest.category_id;
+    if (rest.status !== undefined) patchDb.status = rest.status;
+    if (rest.country !== undefined) patchDb.country = rest.country;
+    if (rest.region !== undefined) patchDb.region = rest.region;
+    if (rest.city !== undefined) patchDb.city = rest.city;
+    if (rest.latitude !== undefined) patchDb.latitude = rest.latitude;
+    if (rest.longitude !== undefined) patchDb.longitude = rest.longitude;
 
-    const needsGeo =
-      (patch.city || patch.region || patch.country) &&
-      (patch.latitude === undefined || patch.longitude === undefined);
+    const hasListingFields = Object.keys(patchDb).length > 0;
 
-    if (needsGeo) {
-      const current = await supabase
+    if (hasListingFields) {
+      const needsGeo =
+        (rest.city || rest.region || rest.country) &&
+        (rest.latitude === undefined || rest.longitude === undefined);
+
+      if (needsGeo) {
+        const current = await supabase
+          .from("listings")
+          .select("country,region,city")
+          .eq("id", numericId)
+          .single();
+
+        if (current.error) throw current.error;
+
+        const currentLoc = current.data as Pick<ListingRow, "country" | "region" | "city">;
+
+        const withCoords = await geocodeIfNeeded({
+          country: patchDb.country ?? currentLoc.country ?? null,
+          region: patchDb.region ?? currentLoc.region ?? null,
+          city: patchDb.city ?? currentLoc.city ?? null,
+          latitude: patchDb.latitude ?? null,
+          longitude: patchDb.longitude ?? null,
+        });
+
+        patchDb.latitude = withCoords.latitude;
+        patchDb.longitude = withCoords.longitude;
+      }
+
+      const { error: updateError } = await supabase
         .from("listings")
-        .select("country,region,city")
+        .update(patchDb)
         .eq("id", numericId)
         .single();
-      if (current.error) throw current.error;
 
-      const withCoords = await geocodeIfNeeded({
-        country: patchDb.country ?? current.data.country ?? null,
-        region: patchDb.region ?? current.data.region ?? null,
-        city: patchDb.city ?? current.data.city ?? null,
-        latitude: patchDb.latitude ?? null,
-        longitude: patchDb.longitude ?? null,
-      });
-
-      patchDb.latitude = withCoords.latitude;
-      patchDb.longitude = withCoords.longitude;
+      if (updateError) throw updateError; // RLS przepuści tylko ownera
     }
 
-    const { data, error } = await supabase
+    // aktualizacja zdjęć – jeżeli images zostało przekazane
+    if (images !== undefined) {
+      // skasuj stare
+      const { error: delError } = await supabase
+        .from("listing_images")
+        .delete()
+        .eq("listing_id", numericId);
+
+      if (delError) throw delError;
+
+      if (images.length > 0) {
+        const rows = images.map((path) => ({
+          listing_id: numericId,
+          path,
+        }));
+
+        const { error: imgError } = await supabase.from("listing_images").insert(rows);
+
+        if (imgError) throw imgError;
+      }
+    }
+
+    // Na koniec zwracamy aktualny stan listing + images (tak samo jak w GET)
+    const { data: full, error: fullError } = await supabase
       .from("listings")
-      .update(patchDb)
+      .select("*, listing_images(path)")
       .eq("id", numericId)
-      .select("*")
       .single();
 
-    if (error) throw error; // RLS przepuści tylko ownera
-    return NextResponse.json(data);
+    if (fullError) throw fullError;
+
+    const fullListing = full as ListingWithImages;
+
+    const imagesOut = fullListing.listing_images?.map((img: ListingImageRow) => img.path) ?? [];
+
+    const { listing_images: _ignored2, ...restListing } = fullListing;
+
+    return NextResponse.json({ ...restListing, images: imagesOut });
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 400 });
   }
@@ -199,12 +264,12 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id } = await ctx.params; // 👈 await
+    const { id } = await ctx.params;
     const numericId = Number(id);
 
     const { error } = await supabase.from("listings").delete().eq("id", numericId).single();
 
-    if (error) throw error; // RLS „owners delete own”
+    if (error) throw error; // RLS „owners delete own”; listing_images usuwa ON DELETE CASCADE
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 400 });
