@@ -45,8 +45,17 @@ export default function Navbar() {
   }, [supabase]);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.refresh();
+    try {
+      const res = await fetch("/api/auth/sign-out", {
+        method: "POST",
+      });
+
+      if (res.ok) {
+        window.location.href = "/";
+      }
+    } catch (err) {
+      console.error("Błąd wylogowywania:", err);
+    }
   };
 
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
