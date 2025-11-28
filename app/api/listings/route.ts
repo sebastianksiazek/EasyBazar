@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /* ========== Typy zgodne z tabelą ========== */
 type ListingStatus = "active" | "sold" | "hidden";
@@ -38,6 +39,12 @@ type BaseLoc = {
   city: string | null;
   latitude?: number | null;
   longitude?: number | null;
+};
+
+type SellerProfile = {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
 };
 
 /* ========== Helpery ========== */
@@ -135,10 +142,48 @@ export async function GET(req: Request) {
 
     const rows = (data as ListingWithImages[]) ?? [];
 
+    /* ====== SELLER FETCH (supabaseAdmin, omija RLS) ====== */
+
+    const ownerIds = Array.from(
+      new Set(rows.map((row) => row.owner).filter((id): id is string => Boolean(id)))
+    );
+
+    let sellerById = new Map<string, SellerProfile>();
+
+    if (ownerIds.length > 0) {
+      const { data: sellers } = await supabaseAdmin
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .in("id", ownerIds as string[]);
+
+      if (sellers) {
+        const typedSellers = sellers as SellerProfile[];
+        sellerById = new Map(
+          typedSellers.map((s) => [
+            s.id,
+            {
+              id: s.id,
+              username: s.username,
+              avatar_url: s.avatar_url,
+            },
+          ])
+        );
+      }
+    }
+
+    /* ====== BUILD FINAL ITEMS ====== */
+
     const items = rows.map((row) => {
       const images = row.listing_images?.map((img: ListingImageRow) => img.path) ?? [];
       const { listing_images: _ignored, ...rest } = row;
-      return { ...rest, images };
+
+      const seller = sellerById.get(row.owner) ?? null;
+
+      return {
+        ...rest,
+        images,
+        seller,
+      };
     });
 
     return NextResponse.json({

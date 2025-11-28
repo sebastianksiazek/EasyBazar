@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /* ===========================
    Typy i helpery
@@ -39,6 +40,12 @@ type BaseLoc = {
   city: string | null;
   latitude?: number | null;
   longitude?: number | null;
+};
+
+type SellerProfile = {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
 };
 
 const toCents = (pln: number) => Math.round(pln * 100);
@@ -110,10 +117,12 @@ const ListingUpdateSchema = z
 
 type ListingUpdate = z.infer<typeof ListingUpdateSchema>;
 
+type RouteCtx = { params: Promise<{ id: string }> };
+
 /* ===========================
    GET /api/listings/:id
 =========================== */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, ctx: RouteCtx) {
   try {
     const supabase = await createClient();
 
@@ -131,10 +140,22 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const listing = data as ListingWithImages;
 
     const images = listing.listing_images?.map((img: ListingImageRow) => img.path) ?? [];
-
     const { listing_images: _ignored, ...rest } = listing;
 
-    return NextResponse.json({ ...rest, images });
+    // seller przez supabaseAdmin (omijamy RLS, ale zwracamy tylko wybrane pola)
+    const { data: sellerData } = await supabaseAdmin
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .eq("id", listing.owner)
+      .single();
+
+    const seller: SellerProfile | null = sellerData ? (sellerData as SellerProfile) : null;
+
+    return NextResponse.json({
+      ...rest,
+      images,
+      seller,
+    });
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 404 });
   }
@@ -143,7 +164,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 /* ===========================
    PUT /api/listings/:id
 =========================== */
-export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function PUT(req: Request, ctx: RouteCtx) {
   try {
     const supabase = await createClient();
     const {
@@ -232,7 +253,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       }
     }
 
-    // Na koniec zwracamy aktualny stan listing + images (tak samo jak w GET)
+    // Na koniec zwracamy aktualny stan listing + images + seller (tak samo jak w GET)
     const { data: full, error: fullError } = await supabase
       .from("listings")
       .select("*, listing_images(path)")
@@ -247,7 +268,19 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
     const { listing_images: _ignored2, ...restListing } = fullListing;
 
-    return NextResponse.json({ ...restListing, images: imagesOut });
+    const { data: sellerData } = await supabaseAdmin
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .eq("id", fullListing.owner)
+      .single();
+
+    const seller: SellerProfile | null = sellerData ? (sellerData as SellerProfile) : null;
+
+    return NextResponse.json({
+      ...restListing,
+      images: imagesOut,
+      seller,
+    });
   } catch (e) {
     return NextResponse.json({ error: errorMessage(e) }, { status: 400 });
   }
@@ -256,7 +289,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 /* ===========================
    DELETE /api/listings/:id
 =========================== */
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: Request, ctx: RouteCtx) {
   try {
     const supabase = await createClient();
     const {
