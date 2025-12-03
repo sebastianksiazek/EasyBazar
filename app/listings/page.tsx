@@ -1,55 +1,61 @@
-import { createClient } from "@/lib/supabase-server";
-import { ListingCard } from "@/components/ListingCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Search } from "lucide-react";
+import { ListingCard } from "@/components/ListingCard";
 
 export const dynamic = "force-dynamic";
 
-interface ListingsPageProps {
-  searchParams: Promise<{
-    q?: string;
-    category?: string;
-    minPrice?: string;
-    maxPrice?: string;
-    city?: string;
-    voivodeship?: string;
+interface SearchParams {
+  q?: string;
+  category?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  city?: string;
+  voivodeship?: string;
+}
+
+async function fetchListings(params: SearchParams) {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (typeof window === "undefined"
+      ? process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000"
+      : "");
+
+  const queryParams = new URLSearchParams();
+
+  if (params.q) queryParams.append("q", params.q);
+  if (params.city) queryParams.append("city", params.city);
+  if (params.voivodeship) queryParams.append("region", params.voivodeship);
+  queryParams.append("page", "1");
+  queryParams.append("limit", "50");
+
+  const res = await fetch(`${baseUrl}/api/listings?${queryParams.toString()}`, {
+    next: { revalidate: 0 },
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch listings");
+  }
+
+  const json = await res.json();
+  return json.items as Array<{
+    id: number;
+    title: string;
+    price_cents: number;
+    city: string | null;
+    images: string[];
+    seller?: {
+      username: string | null;
+      avatar_url: string | null;
+    } | null;
   }>;
 }
 
-export default async function ListingsPage({ searchParams }: ListingsPageProps) {
-  const supabase = await createClient();
-  const params = await searchParams;
-  const query = params.q || "";
-  const city = params.city || "";
-  const voivodeship = params.voivodeship || "";
-
-  let dbQuery = supabase
-    .from("listings")
-    .select(
-      `
-      *,
-      listing_images (path),
-      categories (name)
-    `
-    )
-    .eq("status", "active")
-    .order("created_at", { ascending: false });
-
-  if (query) {
-    dbQuery = dbQuery.ilike("title", `%${query}%`);
-  }
-
-  if (city) {
-    dbQuery = dbQuery.ilike("city", `%${city}%`);
-  }
-
-  if (voivodeship) {
-    dbQuery = dbQuery.ilike("region", `%${voivodeship}%`);
-  }
-
-  const { data: listings } = await dbQuery;
+export default async function ListingsPage({ searchParams }: { searchParams: SearchParams }) {
+  const listings = await fetchListings(searchParams);
 
   return (
     <div className="container mx-auto px-4 py-8 min-h-[calc(100vh-4rem)]">
@@ -67,7 +73,7 @@ export default async function ListingsPage({ searchParams }: ListingsPageProps) 
               name="q"
               placeholder="Szukaj po tytule..."
               className="pl-8"
-              defaultValue={query}
+              defaultValue={searchParams.q || ""}
             />
           </div>
           <Button type="submit">Szukaj</Button>
@@ -77,8 +83,7 @@ export default async function ListingsPage({ searchParams }: ListingsPageProps) 
       {listings && listings.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {listings.map((listing) => {
-            const firstImage = listing.listing_images?.[0]?.path || null;
-            const categoryName = listing.categories?.name || "Inne";
+            const firstImage = listing.images?.[0] ?? null;
 
             return (
               <ListingCard
@@ -88,7 +93,7 @@ export default async function ListingsPage({ searchParams }: ListingsPageProps) 
                 price={listing.price_cents / 100}
                 imageSrc={firstImage}
                 location={listing.city || "Polska"}
-                category={categoryName}
+                category={"Inne"} // Endpoint nie zwraca kategorii, możesz to zmienić w API
               />
             );
           })}
@@ -97,12 +102,12 @@ export default async function ListingsPage({ searchParams }: ListingsPageProps) 
         <div className="text-center py-16 border rounded-lg bg-muted/10">
           <h3 className="text-xl font-semibold mb-2">Nie znaleziono ogłoszeń</h3>
           <p className="text-muted-foreground mb-6">
-            {query
-              ? `Brak wyników dla frazy "${query}". Spróbuj innego zapytania.`
+            {searchParams.q
+              ? `Brak wyników dla frazy "${searchParams.q}". Spróbuj innego zapytania.`
               : "Aktualnie nie ma żadnych aktywnych ogłoszeń."}
           </p>
           <div className="flex justify-center gap-4">
-            {query && (
+            {searchParams.q && (
               <Button variant="outline" asChild>
                 <Link href="/listings">Wyczyść filtry</Link>
               </Button>
