@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 const openapi = {
   openapi: "3.0.3",
   info: {
-    title: "EasyBazar API",
+    title: "EasyBazar APIIII",
     version: "1.1.0",
     description:
       "Dokumentacja API dla endpointów w /app/api/* (Auth, Health, Listings).\n" +
