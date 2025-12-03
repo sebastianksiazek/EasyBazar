@@ -1,26 +1,38 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ListingCard } from "@/components/ListingCard";
-import { createClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const supabase = await createClient();
+async function fetchListings() {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (typeof window === "undefined"
+      ? process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000"
+      : "");
 
-  // Pobieramy ogłoszenia wraz z pierwszym zdjęciem i kategorią
-  const { data: listings } = await supabase
-    .from("listings")
-    .select(
-      `
-      *,
-      listing_images (path),
-      categories (name)
-    `
-    )
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(8);
+  const res = await fetch(`${baseUrl}/api/listings?page=1&limit=8`, {
+    next: { revalidate: 0 }, // pobiera świeże dane przy każdym żądaniu serwera
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch listings");
+  }
+
+  const json = await res.json();
+  return json.items as Array<{
+    id: number;
+    title: string;
+    price_cents: number;
+    city: string | null;
+    images: string[];
+  }>;
+}
+
+export default async function Home() {
+  const listings = await fetchListings();
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
@@ -56,9 +68,7 @@ export default async function Home() {
         {listings && listings.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {listings.map((listing) => {
-              // Pobieramy pierwsze zdjęcie lub null
-              const firstImage = listing.listing_images?.[0]?.path || null;
-              const categoryName = listing.categories?.name || "Inne";
+              const firstImage = listing.images?.[0] ?? null;
 
               return (
                 <ListingCard
@@ -68,7 +78,7 @@ export default async function Home() {
                   price={listing.price_cents / 100}
                   imageSrc={firstImage}
                   location={listing.city || "Polska"}
-                  category={categoryName}
+                  category={"Inne"} // Możesz tu zastąpić kategorią, jeśli endpoint ją zwróci
                 />
               );
             })}
