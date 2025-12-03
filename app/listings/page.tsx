@@ -54,8 +54,13 @@ async function fetchListings(params: SearchParams) {
   }>;
 }
 
-export default async function ListingsPage({ searchParams }: { searchParams: SearchParams }) {
-  const listings = await fetchListings(searchParams);
+export default async function ListingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const listings = await fetchListings(params);
 
   return (
     <div className="container mx-auto px-4 py-8 min-h-[calc(100vh-4rem)]">
@@ -73,7 +78,7 @@ export default async function ListingsPage({ searchParams }: { searchParams: Sea
               name="q"
               placeholder="Szukaj po tytule..."
               className="pl-8"
-              defaultValue={searchParams.q || ""}
+              defaultValue={params.q || ""}
             />
           </div>
           <Button type="submit">Szukaj</Button>
@@ -102,12 +107,12 @@ export default async function ListingsPage({ searchParams }: { searchParams: Sea
         <div className="text-center py-16 border rounded-lg bg-muted/10">
           <h3 className="text-xl font-semibold mb-2">Nie znaleziono ogłoszeń</h3>
           <p className="text-muted-foreground mb-6">
-            {searchParams.q
-              ? `Brak wyników dla frazy "${searchParams.q}". Spróbuj innego zapytania.`
+            {params.q
+              ? `Brak wyników dla frazy "${params.q}". Spróbuj innego zapytania.`
               : "Aktualnie nie ma żadnych aktywnych ogłoszeń."}
           </p>
           <div className="flex justify-center gap-4">
-            {searchParams.q && (
+            {params.q && (
               <Button variant="outline" asChild>
                 <Link href="/listings">Wyczyść filtry</Link>
               </Button>

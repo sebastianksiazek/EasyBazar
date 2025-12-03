@@ -47,8 +47,9 @@ async function fetchListing(id: string): Promise<Listing | null> {
   return data;
 }
 
-export default async function ListingPage({ params }: { params: { id: string } }) {
-  const listing = await fetchListing(params.id);
+export default async function ListingPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const listing = await fetchListing(id);
 
   if (!listing) {
     notFound(); // wywoła app/not-found.tsx jeżeli istnieje
