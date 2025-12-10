@@ -13,14 +13,32 @@ async function fetchListings() {
         : "http://localhost:3000"
       : "");
 
-  const res = await fetch(`${baseUrl}/api/listings?page=1&limit=8`, {
-    next: { revalidate: 0 }, // pobiera świeże dane przy każdym żądaniu serwera
+  const url = `${baseUrl}/api/listings?page=1&limit=8`;
+
+  console.log("FETCHING LISTINGS FROM:", url);
+
+  const res = await fetch(url, {
+    next: { revalidate: 0 },
   });
 
   if (!res.ok) {
-    throw new Error("Failed to fetch listings");
+    // 🔥 DOKŁADNE LOGI DLA VERCELA
+    let body = "";
+    try {
+      body = await res.text();
+    } catch (e) {
+      body = "Could not read body";
+    }
+
+    console.error("LISTINGS FETCH FAILED");
+    console.error("URL:", url);
+    console.error("Status:", res.status);
+    console.error("Body:", body);
+
+    throw new Error(`Failed to fetch listings (status: ${res.status})`);
   }
 
+  // ⬇️ TWOJA LOGIKA — NIC NIE ZMIENIAM
   const json = await res.json();
   return json.items as Array<{
     id: number;
