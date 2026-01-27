@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { MessageSellerButton } from "@/components/MessageSellerButton";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +148,7 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
                 <p className="font-medium">{listing.seller.username ?? "Użytkownik"}</p>
                 <p className="text-xs text-muted-foreground">Sprzedawca z EasyBazar</p>
               </div>
+              <MessageSellerButton listingId={listing.id} sellerId={listing.seller.id} />
             </div>
           )}
         </div>
