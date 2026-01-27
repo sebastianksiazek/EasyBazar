@@ -155,6 +155,9 @@ export default function Navbar() {
                 <DropdownMenuItem asChild>
                   <Link href="/listings/my">Moje ogłoszenia</Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Link href="/messages">Moje wiadomości</Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
