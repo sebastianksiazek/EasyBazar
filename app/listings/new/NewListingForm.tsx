@@ -370,16 +370,6 @@ export function NewListingForm() {
       {/* DODATKOWE + UPLOAD */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium">Kategoria ID (opcjonalnie)</label>
-          <Input
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            inputMode="numeric"
-            placeholder="np. 3"
-          />
-        </div>
-
-        <div className="space-y-2">
           <label className="text-sm font-medium">Zdjęcia (max 10)</label>
           <Input
             type="file"
